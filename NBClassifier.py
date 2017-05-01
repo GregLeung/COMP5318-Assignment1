@@ -2,29 +2,35 @@ import csv
 import time
 import math
 
+alpha = 0.0000000000000000000000000000000000000001
 
-# Read the csv files
+
+# Read the files
 def readCsvFile(filename):
     rows = csv.reader(open(filename, "r"), delimiter=',')
     return list(rows)
 
 
+# Read training CSV files with app name and tf-idf values
+def readNameTfIdf(filename):
+    rows = csv.reader(open(filename, "r"), delimiter=',')
+    names = []
+    data = list(rows)
+    for i in range(len(data)):
+        names.append(data[i][0])
+        del data[i][0]
+        data[i] = [float(x) + alpha for x in data[i]]
+    return names, data
+
+
 # Match the name of app in the training_labels file with the name of app in the training_data file, append the
-# class label at the end, remove the name of the app afterward
-def appendClass(data, label):
-    for l in label:
-        for d in data:
-            if l[0] == d[0]:
-                d.append(l[1])
-                del d[0]
+# class label at the end
+def appendClass(training_name, training_data, training_label):
+    for l in training_label:
+        for i in range(len(training_name)):
+            if l[0] == training_name[i]:
+                training_data[i].append(l[1])
                 break
-
-
-# Convert item in the list to float
-def convertToFloat(map):
-    for key, value in map.items():
-        for row in value:
-            row = [float(x) for x in row]
 
 
 # Group the tf-idf values by class
@@ -42,44 +48,73 @@ def groupByClass(training_data):
     return group
 
 
-# Calculating Mean
-def meanCalculation(numbers):
-    return sum(numbers) / float((len(numbers)))
+# Calculate summation tf_idf for all words in a class
+def sumAll(classtfidf):
+    result = 0.
+    for row in classtfidf:
+        result += sum(row)
+    return result
 
 
-# Calculating Standard deviation
-def sdCaculation(numbers):
-    mean = meanCalculation(numbers)
-    variance = sum([pow(x - mean, 2) for x in numbers]) / float(len(numbers) - 1)
-    return math.sqrt(variance)
+# Calculate summation of tf_idf for one word
+def sumWord(classtfidf):
+    result = []
+    for words in zip(*classtfidf):
+        result.append(sum(words))
+    return result
 
 
-# Calculate both mean and standard deviation of each attribute for a class, return a list of tuples(mean, std) for each
-# attribute
-def msCalculation(outerList):
-    results = [(meanCalculation(vertical), sdCaculation(vertical)) for vertical in zip(*outerList)]
-    return results
-
-
-# Use msCalculation() function to find out both mean and standard deviation of each attribute for every classes
-# return a new map
-def msCalculationByClasses(groups):
-    classMS = {}
+# Calculate log probability for each word by class
+def wordsProb(groups):
+    result = {}
     for key, value in groups.items():
-        classMS[key] = msCalculation(value)
+        result[key] = []
+        divisor = sumAll(value)
+        dividend = sumWord(value)
+        for d in dividend:
+            quotient = d / divisor
+            result[key].append(math.log(quotient, math.e))
+    return result
 
-    return classMS
+
+# Calculate class prob
+def labelsProb(groups):
+    training_data_size = 0
+    for key, value in groups.items():
+        training_data_size += len(key)
+    result = {}
+    for key, value in groups.items():
+        result[key] = math.log(float(len(key)) / float(training_data_size), math.e)
+    return result
 
 
+# Calculate probability of each class and make prediction given the test dataset and training dataset:
+def predict(test_name, test_data, wordsP, labelsP):
+    results = []
+    for i in range(0, len(test_data)):
+        maximum = float("-inf")
+        label = None
+        result = []
+        for key, value in labelsP.items():
+            prob = 1.
+            for j in range(0, len(test_data[i])):
+                prob = prob + wordsP[key][j] + math.log(test_data[i][j], math.e)
+            #prob += value
+            result.append(prob)
+            if prob > maximum:
+                maximum = prob
+                label = key
+        print(label)
 def main():
+
+    # Training:
     start = time.time()
-    training_data = readCsvFile('training_data - Copy.csv')
-    training_labels = readCsvFile('training_labels.csv')
-    # test_data = readCsvFile('test_data.csv')
+    training_names, training_data = readNameTfIdf('training_data - Copy.csv')
+    labels = readCsvFile('training_labels.csv')
     end = time.time()
     print('Finish loading, the time used was: {0} seconds'.format(end - start))
     start = time.time()
-    appendClass(training_data, training_labels)
+    appendClass(training_names, training_data, labels)
     end = time.time()
     print('Finish appending class, the time used was: {0} seconds'.format(end - start))
     start = time.time()
@@ -87,18 +122,24 @@ def main():
     end = time.time()
     print('Finish grouping by class, the time used was: {0} seconds'.format(end - start))
     start = time.time()
-    convertToFloat(groups)
+    wordsP = wordsProb(groups)
     end = time.time()
-    for key, value in groups.items():
-        for row in value:
-            for ele in row:
-                if isinstance(ele, str):
-                    print('string found')
-    print('Finish converting to float, the time used was: {0} seconds'.format(end - start))
+    total = 0
+    print('Finish calculating wordsProb, the time used was: {0} seconds'.format(end - start))
     start = time.time()
-    #classMS = msCalculationByClasses(groups)
+    labelsP = labelsProb(groups)
     end = time.time()
-    print('Finish calculating to mean and sd, the time used was: {0} seconds'.format(end - start))
+    print('Finish calculating labelsProb, the time used was: {0} seconds'.format(end - start))
+
+    # Make prediction:
+    start = time.time()
+    testing_names, testing_data = readNameTfIdf('test_data.csv')
+    end = time.time()
+    print('Finish loading, the time used was: {0} seconds'.format(end - start))
+    start = time.time()
+    predict(testing_names, testing_data, wordsP, labelsP)
+    end = time.time()
+    print('Finish prediction, the time used was: {0} seconds'.format(end - start))
 
 
 main()
