@@ -2,8 +2,6 @@ import csv
 import time
 import math
 
-alpha = 0.01
-
 
 # Read the files
 def readCsvFile(filename):
@@ -12,7 +10,7 @@ def readCsvFile(filename):
 
 
 # Read training CSV files with app name and tf-idf values
-def readNameTfIdf(filename):
+def readNameTfIdf(filename, alpha):
     rows = csv.reader(open(filename, "r"), delimiter=',')
     names = []
     data = list(rows)
@@ -64,17 +62,31 @@ def sumWord(classtfidf):
     return result
 
 
-# Calculate log probability for each word by class
+# Calculate probability for each word by class by complement. aka. Step 4 complement
 def wordsProb(groups):
     result = {}
-    for key, value in groups.items():
-        result[key] = []
-        divisor = sumAll(value)
-        dividend = sumWord(value)
-        for d in dividend:
-            quotient = d / divisor
-            result[key].append(math.log(quotient, math.e))
+    for targetClass, targetValue in groups.items():
+        divisor = 0.
+        dividend = []
+        for otherClass, otherValue in groups.items():
+            if otherClass != targetClass:
+                divisor += sumAll(otherValue)
+                dividend.append(sumWord(otherValue))
+        dividend = sumWord(dividend)
+        for i in range(0, len(dividend)):
+            dividend[i] = math.log(dividend[i] / divisor)
+        result[targetClass] = dividend
     return result
+
+
+# Normalising the weight optained from step 5
+def weightNormalization(wordsProb):
+    for key, value in wordsProb.items():
+        sum = 0.
+        for ele in value:
+            sum += ele
+        for i in range(0, len(value)):
+            value[i] = value[i] / sum
 
 
 # Calculate class prob
@@ -84,30 +96,34 @@ def labelsProb(groups):
         training_data_size += len(key)
     result = {}
     for key, value in groups.items():
-        result[key] = len(key) / training_data_size
+        result[key] = math.log(float(len(key)) / float(training_data_size))
     return result
 
 
-# Calculate probability of each class and make prediction given the test dataset and training dataset:
-def predict(test_name, test_data, wordsP, labelsP):
-    result = []
+# Calculate probability of each class and make prediction given the test dataset and training dataset. aka. step8
+def predict(test_name, test_data, wordsP):
+    results = []
     for i in range(0, len(test_data)):
-        maximum = float("-inf")
+        minimum = float("inf")
         label = None
-        for key, values in labelsP.items():
-            prob = 1.
-            for j in range(len(test_data[i])):
-                prob = prob * wordsP[key][j] * test_data[i][j]
-            if prob > maximum:
-                maximum = prob
+        result = []
+        for key, value in wordsP.items():
+            prob = 0.
+            for j in range(0, len(test_data[i])):
+                prob += test_data[i][j] * wordsP[key][j]
+            result.append(prob)
+            if prob < minimum:
+                minimum = prob
                 label = key
+        print(result)
         print(test_name[i], label)
+        results.append(label)
 
 
 def main():
     # Training:
     start = time.time()
-    training_names, training_data = readNameTfIdf('training_data.csv')
+    training_names, training_data = readNameTfIdf('training_data - Copy.csv', 1)
     labels = readCsvFile('training_labels.csv')
     end = time.time()
     print('Finish loading, the time used was: {0} seconds'.format(end - start))
@@ -124,18 +140,19 @@ def main():
     end = time.time()
     print('Finish calculating wordsProb, the time used was: {0} seconds'.format(end - start))
     start = time.time()
-    labelsP = labelsProb(groups)
+    weightNormalization(wordsP)
     end = time.time()
-    print('Finish calculating labelsProb, the time used was: {0} seconds'.format(end - start))
+    print('Finish normalisation step, the time used was: {0} seconds'.format(end - start))
 
     # Make prediction:
     start = time.time()
-    testing_names, testing_data = readNameTfIdf('test_data.csv')
+    testing_names, testing_data = readNameTfIdf('test_data.csv', 0)
     end = time.time()
     print('Finish loading, the time used was: {0} seconds'.format(end - start))
     start = time.time()
-    predict(testing_names, testing_data, wordsP, labelsP)
+    predict(testing_names, testing_data, wordsP)
     end = time.time()
-    print('Finish loading, the time used was: {0} seconds'.format(end - start))
+    print('Finish prediction, the time used was: {0} seconds'.format(end - start))
+
 
 main()
